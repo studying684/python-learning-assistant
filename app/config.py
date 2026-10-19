@@ -2,7 +2,7 @@
 
 本项目的核心设计是「多 Provider 可切换」：
 - 主流大模型服务（OpenAI、DeepSeek、Kimi、通义千问、智谱 GLM、豆包方舟、
-  本地 llama.cpp/Ollama）都支持 OpenAI 兼容协议，切换只需改
+  Grok、Gemini、本地 llama.cpp/Ollama）都支持 OpenAI 兼容协议，切换只需改
   base_url / api_key / model 三个配置项，业务代码不用动；
 - Anthropic 是唯一的例外：它的原生 Messages API（POST /v1/messages）与
   OpenAI 协议不兼容，因此这里用 protocol 字段标记，由 llm.py 自动分流，
@@ -61,7 +61,21 @@ PROVIDERS = {
         "env_prefix": "DASHSCOPE",
         "protocol": "openai",
         "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "default_model": "qwen3.7-plus",
+        "default_model": "qwen3.8-max",
+    },
+    "xai": {
+        "label": "Grok（xAI）",
+        "env_prefix": "XAI",
+        "protocol": "openai",
+        "default_base_url": "https://api.x.ai/v1",
+        "default_model": "grok-4.7",
+    },
+    "gemini": {
+        "label": "Gemini（Google）",
+        "env_prefix": "GEMINI",
+        "protocol": "openai",
+        "default_base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "default_model": "gemini-3.8-flash",
     },
     "zhipu": {
         "label": "智谱 GLM（支持联网）",
@@ -82,7 +96,7 @@ PROVIDERS = {
         "env_prefix": "LOCAL",
         "protocol": "openai",
         "default_base_url": "http://127.0.0.1:8080/v1",
-        "default_model": "qwen3-8b",
+        "default_model": "qwen3.8-27b",
     },
 }
 
