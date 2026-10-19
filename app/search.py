@@ -22,7 +22,9 @@ def _tavily(query: str) -> list[dict] | None:
         return None
     resp = httpx.post(
         "https://api.tavily.com/search",
-        json={"api_key": key, "query": query, "max_results": 5, "search_depth": "basic"},
+        # 认证走 Authorization: Bearer 头（不要把 api_key 塞进请求体）
+        headers={"Authorization": f"Bearer {key}"},
+        json={"query": query, "max_results": 5, "search_depth": "basic"},
         timeout=_TIMEOUT,
     )
     resp.raise_for_status()
