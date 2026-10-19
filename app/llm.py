@@ -13,12 +13,17 @@
 from __future__ import annotations
 
 import httpx
+from openai import APIConnectionError as _OpenAIConnectionError
 from openai import OpenAI
 
 from . import config
 
 # Anthropic Messages API 要求的版本头
 ANTHROPIC_VERSION = "2023-06-01"
+
+# 单次 LLM 调用超时（秒）。长路线生成可能接近该上限，
+# 超时后 openai SDK 会抛 APITimeoutError，由上层统一转成 LLMError。
+_TIMEOUT = 60.0
 
 
 class LLMError(Exception):
@@ -185,5 +190,9 @@ def chat(
         return _anthropic_chat(cfg, messages, json_mode, temperature, max_tokens)
 
     api_key = cfg["api_key"] or "not-needed"  # 本地模型无需 Key
-    client = OpenAI(api_key=api_key, base_url=cfg["base_url"])
-    return _openai_chat(client, cfg, messages, json_mode, temperature, max_tokens)
+    client = OpenAI(api_key=api_key, base_url=cfg["base_url"], timeout=_TIMEOUT)
+    try:
+        return _openai_chat(client, cfg, messages, json_mode, temperature, max_tokens)
+    except _OpenAIConnectionError as exc:
+        # 本地 llama.cpp/Ollama 没起、或网络不通时会走到这里
+        raise LLMError(f"Provider「{provider}」连接失败：{exc}") from exc

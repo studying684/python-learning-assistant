@@ -11,6 +11,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from pydantic import BaseModel, Field
+
 from . import llm
 
 # 数据库文件位于 data/learning.db，首次运行自动创建
@@ -216,6 +218,31 @@ GENERATE_PROMPT = """你是一名编程教学专家。请根据用户要求生�
 4. 不要生成任何敏感、违法或与编程学习无关的内容。
 """
 
+# 难度白名单：模型乱写时归一，保证前端筛选不会漏
+_DIFFICULTIES = ("入门", "进阶", "实战")
+
+
+class GeneratedProject(BaseModel):
+    """LLM 生成的单个项目结构（缺字段时给默认值）。"""
+
+    title: str
+    difficulty: str = "入门"
+    description: str = ""
+    knowledge_points: list[str] = Field(default_factory=list)
+    acceptance_criteria: list[str] = Field(default_factory=list)
+
+    def to_row(self, language: str) -> dict:
+        """转成入库用的 dict，并把 difficulty 归一到白名单内。"""
+        difficulty = self.difficulty if self.difficulty in _DIFFICULTIES else "进阶"
+        return {
+            "language": language,
+            "difficulty": difficulty,
+            "title": self.title.strip(),
+            "description": self.description.strip(),
+            "knowledge_points": self.knowledge_points,
+            "acceptance_criteria": self.acceptance_criteria,
+        }
+
 
 def generate_projects(
     language: str,
@@ -235,26 +262,19 @@ def generate_projects(
     ]
     text = llm.chat(messages, provider=provider, json_mode=True)
     try:
-        items = json.loads(text)
-        if not isinstance(items, list):
+        raw = json.loads(text)
+        if not isinstance(raw, list):
             raise ValueError("模型输出不是数组")
+        parsed = [GeneratedProject.model_validate(item) for item in raw]
     except Exception as exc:
         raise llm.LLMError(f"模型输出无法解析为项目列表：{exc}") from exc
 
+    language = language.strip() or "Python"
     created = []
-    for item in items[:count]:
-        title = str(item.get("title", "")).strip()
-        if not title:
+    for item in parsed[:count]:
+        if not item.title.strip():
             continue
-        data = {
-            "language": language.strip() or "Python",
-            "difficulty": str(item.get("difficulty", "入门")).strip() or "入门",
-            "title": title,
-            "description": str(item.get("description", "")).strip(),
-            "knowledge_points": item.get("knowledge_points") or [],
-            "acceptance_criteria": item.get("acceptance_criteria") or [],
-        }
-        created.append(add_project(data, source="generated"))
+        created.append(add_project(item.to_row(language), source="generated"))
     if not created:
         raise llm.LLMError("模型没有生成出有效项目，请重试")
     return created

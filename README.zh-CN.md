@@ -132,11 +132,12 @@ python-learning-assistant/
 
 几个可讲的实现要点：
 
-- **结构化输出**：通过 system prompt 把模型输出约束为固定 JSON schema，前端直接渲染，避免解析散文
+- **结构化输出**：system prompt 约束 JSON schema，再用 pydantic 模型兜底校验，坏输出在入口就被拦住并转成可读错误，不会带到前端
+- **生命周期**：数据库初始化放在 FastAPI lifespan 里，`uvicorn --reload` 与测试导入都不会重复执行
 - **复合需求一次搞定**：同一句话里"规划路线 + 加 N 个 XX 语言项目"，模型在一个 JSON 里同时输出，后端校验入库
 - **防幻觉**：把搜索 API 返回的真实链接附进提示词，要求模型引用真实资源而非编造
 - **多 Provider 抽象**：9 家 OpenAI 兼容端点直连，Anthropic 按原生协议分流，换模型只需改配置，业务代码零改动
-- **降级策略**：搜索 Key 缺失、JSON 解析失败、`response_format` 不被支持、`generated_projects` 字段缺失时均有自动兜底，功能不中断
+- **降级策略**：搜索 Key 缺失、JSON 解析失败、`response_format` 不被支持、`generated_projects` 字段缺失时均有自动兜底，功能不中断；搜索源失败只写一行 stderr 日志并自动降级为纯 LLM
 
 ## ❓ 常见问题
 

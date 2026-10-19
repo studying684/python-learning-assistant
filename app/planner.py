@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import re
 
+from pydantic import BaseModel, Field
+
 from . import llm, search
 
 # 系统提示词：要求模型只输出 JSON，字段结构固定
@@ -51,6 +53,40 @@ SYSTEM_PROMPT = """你是一名资深的编程学习规划师。用户会告诉�
    language（语言）、数量、主题必须取自用户原话，难度从低到高排列；
    用户没有提出任何加项目的要求时，必须输出空数组 []。
 """
+
+# LLM 输出的结构约束（pydantic 校验，容忍字段缺失与多余字段）
+_DIFFICULTIES = ("入门", "进阶", "实战")
+
+
+class RouteProject(BaseModel):
+    """generated_projects 数组元素的结构。"""
+
+    language: str = "Python"
+    difficulty: str = "入门"
+    title: str
+    description: str = ""
+    knowledge_points: list[str] = Field(default_factory=list)
+    acceptance_criteria: list[str] = Field(default_factory=list)
+
+
+class RouteStage(BaseModel):
+    """stages 数组元素的结构。"""
+
+    title: str = ""
+    goal: str = ""
+    topics: list[str] = Field(default_factory=list)
+    projects: list[str] = Field(default_factory=list)
+    resources: list[str] = Field(default_factory=list)
+    estimated_weeks: int = 2
+    checklist: list[str] = Field(default_factory=list)
+
+
+class Route(BaseModel):
+    """整条学习路线的结构。"""
+
+    summary: str
+    stages: list[RouteStage]
+    generated_projects: list[RouteProject] = Field(default_factory=list)
 
 
 def _extract_json(text: str) -> dict:
@@ -101,9 +137,14 @@ def generate_route(
     ]
     text = llm.chat(messages, provider=provider, json_mode=True)
     try:
-        route = _extract_json(text)
+        raw = _extract_json(text)
     except Exception as exc:
         raise llm.LLMError(f"模型输出无法解析为路线 JSON：{exc}") from exc
-    # 兼容模型未输出 generated_projects 字段的情况
-    route.setdefault("generated_projects", [])
-    return route
+
+    # pydantic 兜底校验：模型漏字段/类型错时给明确错误，而不是到前端才崩
+    try:
+        route = Route.model_validate(raw)
+    except Exception as exc:
+        raise llm.LLMError(f"模型输出不符合路线结构：{exc}") from exc
+
+    return route.model_dump()

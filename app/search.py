@@ -8,11 +8,17 @@
 from __future__ import annotations
 
 import os
+import sys
 
 import httpx
 
 # 搜索请求超时（秒）
 _TIMEOUT = 30.0
+
+
+def _log(message: str) -> None:
+    """搜索失败只提示到 stderr，不打断主流程。"""
+    print(f"[search] {message}", file=sys.stderr)
 
 
 def _tavily(query: str) -> list[dict] | None:
@@ -56,14 +62,20 @@ def search(query: str) -> list[dict]:
 
     所有 Provider 都失败（未配置 Key / 请求报错）时返回空列表，由调用方降级处理。
     """
-    for fn in (_tavily, _serpapi):
+    for name, fn in (("tavily", _tavily), ("serpapi", _serpapi)):
         try:
             results = fn(query)
             if results:
                 return results
-        except Exception:
+        except httpx.HTTPStatusError as exc:
+            code = exc.response.status_code
+            if code == 429:
+                _log(f"{name} 配额已用尽（HTTP 429），本次降级为纯 LLM 生成")
+            else:
+                _log(f"{name} 返回 HTTP {code}，本次降级为纯 LLM 生成")
+        except Exception as exc:
             # 单个搜索源失败不影响整体，继续尝试下一个
-            continue
+            _log(f"{name} 请求失败：{exc}，继续尝试下一个搜索源")
     return []
 
 
