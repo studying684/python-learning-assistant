@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python 学习路线助手</title>
+<style>
+  :root {
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --text: #1f2937;
+    --text-soft: #6b7280;
+    --accent: #2563eb;
+    --accent-soft: #eff6ff;
+    --border: #e5e7eb;
+    --ok: #16a34a;
+    --warn: #dc2626;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .brand { font-size: 20px; font-weight: 700; }
+  .brand span { color: var(--accent); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 14px; color: var(--text-soft); }
+  .toolbar select, .toolbar input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+  .toolbar select {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--text); font-size: 13px; max-width: 320px;
+  }
+  main { max-width: 1080px; margin: 24px auto; padding: 0 16px; display: grid; gap: 24px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px;
+  }
+  h2 { font-size: 17px; margin-bottom: 14px; }
+  h2::before { content: ""; display: inline-block; width: 4px; height: 16px; background: var(--accent); border-radius: 2px; margin-right: 8px; vertical-align: -2px; }
+  .desc { font-size: 13px; color: var(--text-soft); margin-bottom: 12px; }
+  textarea {
+    width: 100%; min-height: 90px; padding: 12px; font-size: 14px;
+    border: 1px solid var(--border); border-radius: 8px; resize: vertical;
+    font-family: inherit;
+  }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .hints { margin-top: 8px; font-size: 12px; color: var(--text-soft); }
+  .btn {
+    display: inline-block; margin-top: 12px; padding: 10px 22px;
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    font-size: 14px; cursor: pointer; transition: opacity .15s;
+  }
+  .btn:hover { opacity: .9; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.ghost { background: var(--card); color: var(--accent); border: 1px solid var(--accent); }
+
+  /* 学习路线结果 */
+  .loading { padding: 24px; text-align: center; color: var(--text-soft); }
+  .error {
+    margin-top: 12px; padding: 12px; border-radius: 8px;
+    background: #fef2f2; color: var(--warn); font-size: 14px;
+  }
+  .added-note {
+    margin-top: 12px; padding: 10px 14px; border-radius: 8px;
+    background: #f0fdf4; border: 1px solid #bbf7d0; color: var(--ok); font-size: 13px;
+  }
+  .route-summary {
+    margin-top: 16px; padding: 12px 16px; border-radius: 8px;
+    background: var(--accent-soft); color: var(--accent); font-size: 14px;
+  }
+  .stage {
+    margin-top: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 10px;
+  }
+  .stage-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .stage-title { font-size: 15px; font-weight: 600; }
+  .stage-weeks {
+    font-size: 12px; color: var(--accent); background: var(--accent-soft);
+    padding: 2px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .stage-goal { font-size: 13px; color: var(--text-soft); margin-bottom: 10px; }
+  .stage-block { margin-top: 8px; font-size: 13px; }
+  .stage-block b { color: var(--text); }
+  .stage-block ul { padding-left: 20px; }
+  .chip {
+    display: inline-block; margin: 2px 4px 2px 0; padding: 2px 10px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
+    font-size: 12px; color: var(--text);
+  }
+
+  /* 项目库 */
+  .filters { display: flex; gap: 10px; margin-bottom: 14px; }
+  .filters select {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); font-size: 13px;
+  }
+  .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .project {
+    border: 1px solid var(--border); border-radius: 10px; padding: 14px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .project.done { opacity: .6; }
+  .project.done .project-title { text-decoration: line-through; }
+  .project-title { font-size: 15px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .badge.lang { background: var(--accent-soft); color: var(--accent); }
+  .badge.diff { background: #f0fdf4; color: var(--ok); }
+  .badge.diff.zhong { background: #fff7ed; color: #c2410c; }
+  .badge.diff.shizhan { background: #fef2f2; color: var(--warn); }
+  .badge.src { background: var(--bg); color: var(--text-soft); }
+  .project-desc { font-size: 13px; color: var(--text-soft); }
+  .project-points { font-size: 12px; }
+  .project-points .chip { font-size: 11px; }
+  .project-accept { font-size: 12px; color: var(--text-soft); }
+  .project-accept ul { padding-left: 18px; }
+  .project-actions { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+  .project-actions label { font-size: 13px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .project-actions input[type="checkbox"] { accent-color: var(--ok); cursor: pointer; }
+  .link-del { margin-left: auto; font-size: 12px; color: var(--text-soft); cursor: pointer; background: none; border: none; text-decoration: underline; }
+  .link-del:hover { color: var(--warn); }
+  .empty { font-size: 13px; color: var(--text-soft); padding: 20px 0; }
+
+  /* AI 生成新项目表单 */
+  .gen-form { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+  .gen-form input {
+    flex: 1; min-width: 120px; padding: 8px 10px; font-size: 13px;
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .gen-form input[type="number"] { flex: 0 0 70px; min-width: 70px; }
+  .gen-form .btn { margin-top: 0; }
+
+  footer { text-align: center; font-size: 12px; color: var(--text-soft); padding: 20px 0 32px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">🐍 Python 学习路线<span>助手</span></div>
+  <div class="toolbar">
+    <label>模型：
+      <select id="providerSelect" title="选择使用哪个大模型 API"></select>
+    </label>
+    <label title="把搜索到的真实资料链接喂给模型，降低编造幻觉">
+      <input type="checkbox" id="searchToggle" checked> 搜索增强
+    </label>
+  </div>
+</header>
+
+<main>
+  <!-- 区块一：学习路线 -->
+  <section class="card">
+    <h2>生成学习路线</h2>
+    <div class="desc">告诉 AI 你的基础、目标和可投入时间，它会生成一份分阶段、可执行的学习路线。</div>
+    <textarea id="userInput" placeholder="例如：我是零基础，想学 Python 做数据分析，每周能投入 10 小时，希望 3 个月内能独立完成一个数据分析小项目"></textarea>
+    <div class="hints">提示：描述越具体，路线越贴合你。可选维度——当前基础 / 学习目标 / 每周时间 / 期望周期。</div>
+    <button class="btn" id="routeBtn">生成路线</button>
+    <div id="routeResult"></div>
+  </section>
+
+  <!-- 区块二：练手项目库 -->
+  <section class="card">
+    <h2>练手项目库</h2>
+    <div class="desc">内置 Python 分级练手项目；学完一个阶段，来这里挑一个练手。也可以用 AI 生成任意语言的新项目。</div>
+    <div class="filters">
+      <select id="langFilter"><option value="">全部语言</option></select>
+      <select id="diffFilter">
+        <option value="">全部难度</option>
+        <option value="入门">入门</option>
+        <option value="进阶">进阶</option>
+        <option value="实战">实战</option>
+      </select>
+    </div>
+    <div id="projectList"><div class="empty">加载中…</div></div>
+
+    <h2 style="margin-top:28px">AI 生成新项目</h2>
+    <div class="desc">输入任意语言和主题，AI 生成练手项目并自动加入项目库（例如：语言 C、主题 指针练习）。</div>
+    <div class="gen-form">
+      <input id="genLanguage" placeholder="语言（如 C / Java / JavaScript）" value="Python">
+      <input id="genCount" type="number" value="3" min="1" max="10" title="生成数量">
+      <input id="genTopic" placeholder="主题/方向（可空）">
+      <button class="btn" id="genBtn">生成并入库</button>
+    </div>
+  </section>
+</main>
+
+<footer>Python 学习路线助手 · 多模型 API 可切换 · 练手项目库支持 AI 扩展</footer>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+
+async function api(url, options) {
+  const resp = await fetch(url, options);
+  if (!resp.ok) {
+    let detail = resp.statusText;
+    try {
+      const data = await resp.json();
+      if (data.detail) detail = data.detail;
+    } catch (e) { /* 忽略非 JSON 响应 */ }
+    throw new Error(detail);
+  }
+  return resp.json();
+}
+
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+/* ---------- 模型与搜索状态 ---------- */
+async function loadModels() {
+  try {
+    const data = await api("/api/models");
+    const sel = $("providerSelect");
+    sel.innerHTML = "";
+    for (const p of data.providers) {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.label + "（" + p.model + "）";
+      sel.appendChild(opt);
+    }
+    if (data.providers.length) {
+      // 默认 Provider 若未配置 Key，自动选中第一个可用的
+      const hasDefault = data.providers.some((p) => p.id === data.default_provider);
+      sel.value = hasDefault ? data.default_provider : data.providers[0].id;
+    }
+    if (!data.search_enabled) {
+      $("searchToggle").checked = false;
+      $("searchToggle").disabled = true;
+      $("searchToggle").parentElement.title = "未配置搜索 API Key（Tavily/SerpAPI），已自动关闭";
+    }
+  } catch (err) {
+    console.error("加载模型列表失败:", err.message);
+  }
+}
+
+/* ---------- 学习路线 ---------- */
+async function generateRoute() {
+  const input = $("userInput").value.trim();
+  if (!input) { alert("请先描述你的学习需求"); return; }
+  const btn = $("routeBtn");
+  btn.disabled = true;
+  btn.textContent = "生成中…";
+  const box = $("routeResult");
+  box.innerHTML = '<div class="loading">正在规划路线，请稍候（首次生成约需 10~30 秒）…</div>';
+  try {
+    const resp = await api("/api/route", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_input: input,
+        provider: $("providerSelect").value,
+        use_search: $("searchToggle").checked,
+      }),
+    });
+    renderRoute(resp.route);
+    // 用户在同一句话里要求的"加项目"已由后端入库，提示并刷新项目库
+    if (resp.added_projects && resp.added_projects.length) {
+      const note = document.createElement("div");
+      note.className = "added-note";
+      note.textContent = "已新增 " + resp.added_projects.length + " 个项目到项目库（如：" + resp.added_projects[0].title + "），下方项目库已刷新";
+      $("routeResult").appendChild(note);
+      loadProjects();
+    }
+  } catch (err) {
+    box.innerHTML = '<div class="error">' + escapeHtml(err.message) + "</div>";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "生成路线";
+  }
+}
+
+function renderRoute(route) {
+  const box = $("routeResult");
+  let html = '<div class="route-summary">' + escapeHtml(route.summary || "") + "</div>";
+  for (const stage of route.stages || []) {
+    const topics = (stage.topics || []).map((t) => '<span class="chip">' + escapeHtml(t) + "</span>").join("");
+    const projects = (stage.projects || []).map((p) => "<li>" + escapeHtml(p) + "</li>").join("");
+    const resources = (stage.resources && stage.resources.length)
+      ? '<div class="stage-block"><b>参考资源：</b><ul>' + stage.resources.map((r) => "<li>" + escapeHtml(r) + "</li>").join("") + "</ul></div>"
+      : "";
+    const checklist = (stage.checklist || []).map((c) => "<li>" + escapeHtml(c) + "</li>").join("");
+    html +=
+      '<div class="stage">' +
+        '<div class="stage-head">' +
+          '<span class="stage-title">' + escapeHtml(stage.title) + "</span>" +
+          '<span class="stage-weeks">约 ' + escapeHtml(stage.estimated_weeks) + " 周</span>" +
+        "</div>" +
+        '<div class="stage-goal">' + escapeHtml(stage.goal || "") + "</div>" +
+        '<div class="stage-block"><b>知识点：</b>' + topics + "</div>" +
+        '<div class="stage-block"><b>练手项目：</b><ul>' + projects + "</ul></div>" +
+        resources +
+        '<div class="stage-block"><b>验收标准：</b><ul>' + checklist + "</ul></div>" +
+      "</div>";
+  }
+  box.innerHTML = html;
+}
+
+/* ---------- 项目库 ---------- */
+let currentLang = "";
+let currentDiff = "";
+
+async function loadProjects() {
+  const params = new URLSearchParams();
+  if (currentLang) params.set("language", currentLang);
+  if (currentDiff) params.set("difficulty", currentDiff);
+  try {
+    const data = await api("/api/projects?" + params.toString());
+    // 更新语言筛选下拉（保留当前选择）
+    const langSel = $("langFilter");
+    const prev = langSel.value;
+    langSel.innerHTML = '<option value="">全部语言</option>';
+    for (const lang of data.languages) {
+      const opt = document.createElement("option");
+      opt.value = lang;
+      opt.textContent = lang;
+      langSel.appendChild(opt);
+    }
+    langSel.value = data.languages.includes(prev) ? prev : "";
+    currentLang = langSel.value;
+    renderProjects(data.projects);
+  } catch (err) {
+    $("projectList").innerHTML = '<div class="error">' + escapeHtml(err.message) + "</div>";
+  }
+}
+
+function renderProjects(projects) {
+  const box = $("projectList");
+  if (!projects.length) {
+    box.innerHTML = '<div class="empty">暂无项目。可以用「AI 生成新项目」添加，或切换筛选条件。</div>';
+    return;
+  }
+  let html = '<div class="project-grid">';
+  for (const p of projects) {
+    const points = (p.knowledge_points || []).map((t) => '<span class="chip">' + escapeHtml(t) + "</span>").join("");
+    const accepts = (p.acceptance_criteria || []).map((c) => "<li>" + escapeHtml(c) + "</li>").join("");
+    const diffClass = p.difficulty === "入门" ? "" : p.difficulty === "进阶" ? " zhong" : " shizhan";
+    const srcLabel = p.source === "builtin" ? "内置" : "AI 生成";
+    html +=
+      '<div class="project' + (p.done ? " done" : "") + '" data-id="' + p.id + '">' +
+        '<div class="project-title">' + escapeHtml(p.title) +
+          '<span><span class="badge lang">' + escapeHtml(p.language) + "</span> " +
+          '<span class="badge diff' + diffClass + '">' + escapeHtml(p.difficulty) + "</span> " +
+          '<span class="badge src">' + srcLabel + "</span></span>" +
+        "</div>" +
+        '<div class="project-desc">' + escapeHtml(p.description) + "</div>" +
+        '<div class="project-points">' + points + "</div>" +
+        '<div class="project-accept"><ul>' + accepts + "</ul></div>" +
+        '<div class="project-actions">' +
+          '<label><input type="checkbox" data-act="done" ' + (p.done ? "checked" : "") + "> 已完成</label>" +
+          '<button class="link-del" data-act="del">删除</button>' +
+        "</div>" +
+      "</div>";
+  }
+  html += "</div>";
+  box.innerHTML = html;
+}
+
+async function toggleDone(id, done) {
+  try {
+    await api("/api/projects/" + id + "/done", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ done: done }),
+    });
+    loadProjects();
+  } catch (err) {
+    alert("操作失败：" + err.message);
+  }
+}
+
+async function deleteProject(id) {
+  if (!confirm("确定删除这个项目吗？")) return;
+  try {
+    await api("/api/projects/" + id, { method: "DELETE" });
+    loadProjects();
+  } catch (err) {
+    alert("删除失败：" + err.message);
+  }
+}
+
+/* ---------- AI 生成新项目 ---------- */
+async function generateProjects() {
+  const language = $("genLanguage").value.trim() || "Python";
+  const count = Math.min(Math.max(parseInt($("genCount").value, 10) || 3, 1), 10);
+  const topic = $("genTopic").value.trim();
+  const btn = $("genBtn");
+  btn.disabled = true;
+  btn.textContent = "生成中…";
+  try {
+    const created = await api("/api/projects/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        language: language,
+        count: count,
+        topic: topic,
+        provider: $("providerSelect").value,
+      }),
+    });
+    $("genTopic").value = "";
+    await loadProjects();
+    if (language !== "Python" && !$("langFilter").value) {
+      // 生成了新语言的项目时，切到该语言便于立即看到
+      $("langFilter").value = language;
+      currentLang = language;
+      await loadProjects();
+    }
+    alert("已生成 " + created.length + " 个项目并加入项目库");
+  } catch (err) {
+    alert("生成失败：" + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "生成并入库";
+  }
+}
+
+/* ---------- 事件绑定 ---------- */
+$("routeBtn").addEventListener("click", generateRoute);
+$("genBtn").addEventListener("click", generateProjects);
+$("langFilter").addEventListener("change", () => { currentLang = $("langFilter").value; loadProjects(); });
+$("diffFilter").addEventListener("change", () => { currentDiff = $("diffFilter").value; loadProjects(); });
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-act='del']");
+  if (btn) deleteProject(parseInt(btn.closest(".project").dataset.id, 10));
+});
+document.addEventListener("change", (e) => {
+  const box = e.target.closest("[data-act='done']");
+  if (box) toggleDone(parseInt(box.closest(".project").dataset.id, 10), box.checked);
+});
+
+/* ---------- 启动 ---------- */
+loadModels();
+loadProjects();
+</script>
+</body>
+</html>
