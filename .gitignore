@@ -8,6 +8,11 @@ __pycache__/
 .venv/
 venv/
 
+# 测试缓存
+.pytest_cache/
+.coverage
+htmlcov/
+
 # 运行时数据（SQLite 数据库，首次启动自动生成）
 data/*.db
 data/*.db-journal
@@ -16,6 +21,8 @@ data/*.sqlite3
 
 # 一次性辅助脚本（不入库）
 verify_and_init.ps1
+_*.py
+_*.txt
 
 # 编辑器 / 系统
 .idea/

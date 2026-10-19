@@ -36,6 +36,12 @@
 pip install -r requirements.txt
 ```
 
+开发（跑测试）额外装：
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 ### 3. 配置 API
 
 ```bash
@@ -102,9 +108,20 @@ python-learning-assistant/
 │   └── projects.py      # 项目库（SQLite + 种子数据 + AI 生成入库）
 ├── static/
 │   └── index.html       # 单页前端（原生 HTML/CSS/JS，无构建步骤）
+├── tests/               # pytest 测试（不打包，仅开发用）
+│   ├── conftest.py      # 把数据库重定向到临时目录的 fixture
+│   ├── test_config.py   # Provider 注册表完整性
+│   ├── test_llm.py      # 协议分流 / Key 检查 / 错误包装（离线）
+│   ├── test_planner.py  # JSON 抽取 + pydantic 兜底校验
+│   ├── test_projects.py # 项目库 CRUD + 难度归一
+│   ├── test_search.py   # 搜索鉴权头与失败降级
+│   └── test_api.py      # TestClient 打真实路由
 ├── data/                # SQLite 数据库（运行时自动生成，已被 git 忽略）
 ├── run.py               # 一键启动：python run.py
-├── requirements.txt
+├── requirements.txt     # 应用依赖（版本锁定）
+├── requirements-dev.txt # 测试依赖
+├── pytest.ini
+├── .github/workflows/ci.yml  # GitHub Actions：3.10/3.11/3.12 跑测试
 ├── .env.example         # 环境变量模板（复制为 .env 使用）
 └── README.md
 ```
@@ -135,6 +152,7 @@ python-learning-assistant/
 - **防幻觉**：把搜索 API 返回的真实链接附进提示词，要求模型引用真实资源而非编造
 - **多 Provider 抽象**：9 家 OpenAI 兼容端点直连，Anthropic 按原生协议分流，换模型只需改配置，业务代码零改动
 - **降级策略**：搜索 Key 缺失、JSON 解析失败、`response_format` 不被支持、`generated_projects` 字段缺失时均有自动兜底，功能不中断；搜索源失败只写一行 stderr 日志并自动降级为纯 LLM
+- **依赖锁定与 CI**：`requirements.txt` 锁死精确版本，任何机器 `pip install` 结果一致；GitHub Actions 在 Python 3.10/3.11/3.12 三个版本上跑 pytest，改动不会悄悄破坏兼容性
 
 ## ❓ 常见问题
 
@@ -152,3 +170,12 @@ python-learning-assistant/
 ## 📄 License
 
 [MIT](LICENSE)
+
+## 🧪 运行测试
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+测试全部离线，不调用任何真实 API（httpx/openai 调用用测试替身），也不碰你的 `data/learning.db`（数据库被重定向到 pytest 临时目录）。CI 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。

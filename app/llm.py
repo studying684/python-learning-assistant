@@ -190,8 +190,10 @@ def chat(
         return _anthropic_chat(cfg, messages, json_mode, temperature, max_tokens)
 
     api_key = cfg["api_key"] or "not-needed"  # 本地模型无需 Key
-    client = OpenAI(api_key=api_key, base_url=cfg["base_url"], timeout=_TIMEOUT)
     try:
+        # 客户端构造也放进 try：openai SDK 在校验 base_url / api_key 时
+        # 同样可能抛 APIConnectionError，必须统一转成可读的 LLMError。
+        client = OpenAI(api_key=api_key, base_url=cfg["base_url"], timeout=_TIMEOUT)
         return _openai_chat(client, cfg, messages, json_mode, temperature, max_tokens)
     except _OpenAIConnectionError as exc:
         # 本地 llama.cpp/Ollama 没起、或网络不通时会走到这里
