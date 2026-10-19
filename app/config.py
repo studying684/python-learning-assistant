@@ -22,6 +22,10 @@ load_dotenv(BASE_DIR / ".env")
 # 默认使用的模型 Provider（可通过 .env 中的 LLM_PROVIDER 覆盖）
 DEFAULT_PROVIDER = os.getenv("LLM_PROVIDER", "deepseek").strip().lower()
 
+# 是否暴露调试接口（如 GET /api/search 会直接消耗搜索 API 配额）。
+# 默认关闭：只在 .env 里显式写 DEBUG_ENDPOINTS=1 时才注册。
+DEBUG_ENDPOINTS = os.getenv("DEBUG_ENDPOINTS", "").strip().lower() in ("1", "true", "yes", "on")
+
 # 支持的 Provider 注册表。
 # env_prefix：该服务在 .env 中使用的环境变量前缀，例如 DEEPSEEK_API_KEY。
 # protocol：openai = 走 OpenAI 兼容协议（openai SDK 直连）；

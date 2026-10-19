@@ -10,14 +10,18 @@ from app import config, main, projects
 @pytest.fixture()
 def client(temp_db, monkeypatch):
     """TestClient + 临时数据库 + 清空 Key（保证 /api/models 只报 local）。"""
+    from app import config, main, projects
+
     monkeypatch.setattr(projects, "DATA_DIR", temp_db.parent)
     monkeypatch.setattr(projects, "DB_PATH", temp_db)
+    projects.reset_connection()
     for meta in config.PROVIDERS.values():
         prefix = meta["env_prefix"]
         monkeypatch.delenv(f"{prefix}_API_KEY", raising=False)
         monkeypatch.delenv(f"{prefix}_MODEL", raising=False)
     with TestClient(main.app) as c:
         yield c
+    projects.reset_connection()
 
 
 def test_index_returns_html(client):
@@ -54,22 +58,36 @@ def test_api_projects_filter(client):
         assert p["difficulty"] == "入门"
 
 
-def test_api_search_requires_query(client):
-    """空参数应被 FastAPI 参数校验拦成 422，而不是打光搜索配额。"""
+def test_api_search_hidden_by_default(client):
+    """调试口默认不注册：返回 404 而不是 403（不暴露口的存在）。"""
+    resp = client.get("/api/search", params={"q": "python"})
+    assert resp.status_code == 404
+
+
+def test_api_search_requires_query(client, monkeypatch):
+    """开了调试开关后，空参数应被参数校验拦成 422，而不是打光搜索配额。"""
+    monkeypatch.setattr(main.config, "DEBUG_ENDPOINTS", True)
     assert client.get("/api/search").status_code == 422
     assert client.get("/api/search", params={"q": ""}).status_code == 422
 
 
-def test_api_search_too_long_rejected(client):
+def test_api_search_too_long_rejected(client, monkeypatch):
+    monkeypatch.setattr(main.config, "DEBUG_ENDPOINTS", True)
     long_q = "x" * 201
     assert client.get("/api/search", params={"q": long_q}).status_code == 422
 
 
 def test_api_search_returns_empty_without_keys(client, monkeypatch):
+    monkeypatch.setattr(main.config, "DEBUG_ENDPOINTS", True)
     monkeypatch.setattr(main.search, "search", lambda q: [])
     resp = client.get("/api/search", params={"q": "python"})
     assert resp.status_code == 200
     assert resp.json() == {"results": []}
+
+
+def test_api_search_not_in_openapi_by_default(client):
+    schema = client.get("/openapi.json").json()
+    assert "/api/search" not in schema["paths"]
 
 
 def test_api_route_empty_input_rejected(client):
@@ -145,4 +163,4 @@ def test_api_projects_done_and_delete(client):
 def test_app_version_is_current(client):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
-    assert resp.json()["info"]["version"] == "0.2.0"
+    assert resp.json()["info"]["version"] == "0.3.0"

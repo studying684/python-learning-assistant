@@ -42,3 +42,8 @@ def test_local_provider_needs_no_key():
     """本地模型即使没配 Key 也必须可用（零门槛演示的关键）。"""
     assert config.get_provider_config("local")["protocol"] == "openai"
     assert "127.0.0.1" in config.get_provider_config("local")["base_url"]
+
+
+def test_debug_endpoints_off_by_default():
+    """调试口默认必须关闭，避免误打搜索配额。"""
+    assert config.DEBUG_ENDPOINTS is False

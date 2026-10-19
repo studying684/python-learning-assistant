@@ -125,3 +125,39 @@ def test_generate_projects_all_titles_empty_raises(monkeypatch, temp_db):
     monkeypatch.setattr(projects.llm, "chat", lambda *a, **k: '[{"title":"  "}]')
     with pytest.raises(llm.LLMError, match="有效项目"):
         projects.generate_projects("C")
+
+
+def test_connection_is_reused_across_calls(temp_db):
+    """连接应在进程内复用，而不是每个请求重开。"""
+    projects.init_db()
+    assert projects._connection() is projects._connection()
+
+
+def test_reset_connection_reopens_new_path(temp_db, tmp_path):
+    """重定向 DB_PATH 后必须 reset，否则仍连在旧文件上。"""
+    projects.init_db()
+    projects.add_project({"language": "C", "difficulty": "入门", "title": "旧库里的项目",
+                          "description": "", "knowledge_points": [], "acceptance_criteria": []})
+    old = projects.DB_PATH
+    projects.DB_PATH = tmp_path / "other.db"
+    projects.reset_connection()
+    projects.init_db()
+    titles = [p["title"] for p in projects.list_projects()]
+    assert "旧库里的项目" not in titles
+    assert len(titles) == len(projects.SEED_PROJECTS)
+    projects.DB_PATH = old
+    projects.reset_connection()
+
+
+def test_writes_survive_new_connection(temp_db):
+    """提交必须真正落盘：换连接后应仍能读到（锁+复用不能吃掉写入）。"""
+    projects.init_db()
+    created = projects.add_project(
+        {
+            "language": "C", "difficulty": "入门", "title": "持久化检查",
+            "description": "", "knowledge_points": [], "acceptance_criteria": [],
+        }
+    )
+    projects.reset_connection()
+    rows = projects.list_projects(language="C")
+    assert [r["id"] for r in rows] == [created["id"]]

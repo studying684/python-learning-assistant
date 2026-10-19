@@ -33,7 +33,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="Python 学习路线助手",
     description="输入学习需求 → AI 生成个性化学习路线；内置练手项目库，支持 AI 生成新项目（多语言）。",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -151,15 +151,18 @@ def remove_project(project_id: int):
     return {"ok": True}
 
 
-# ---------- 搜索（查资料/调试用） ----------
+# ---------- 搜索（调试用，默认关闭） ----------
 
-@app.get("/api/search")
+@app.get("/api/search", include_in_schema=False)
 def do_search(q: str = Query(..., min_length=1, max_length=200, description="搜索关键词")):
-    """测试搜索能力，返回原始搜索结果。
+    """直接调用搜索源返回原始结果，仅用于排查「搜索增强」是否工作。
 
-    注意：这是调试口，每次调用都会消耗搜索 API 配额，日常请用页面上的
-    「搜索增强」开关（路线生成时才搜索）。
+    每次调用都会消耗搜索 API 的免费配额，因此默认不注册：
+    在 .env 里设 `DEBUG_ENDPOINTS=1` 才会启用（未启用时返回 404，
+    刻意不返回 403，不向外暴露这个口的存在）。
     """
+    if not config.DEBUG_ENDPOINTS:
+        raise HTTPException(status_code=404, detail="Not Found")
     return {"results": search.search(q)}
 
 

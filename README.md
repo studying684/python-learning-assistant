@@ -62,6 +62,14 @@ DEEPSEEK_API_KEY=sk-xxxxxxxx
 python run.py
 ```
 
+启动参数：
+
+```bash
+python run.py                     # 正常启动（默认不开热重载）
+python run.py --reload            # 开发模式：改代码自动重启
+python run.py --host 0.0.0.0 --port 9000   # 允许局域网访问
+```
+
 浏览器打开 **http://127.0.0.1:8000**（接口文档在 http://127.0.0.1:8000/docs）。
 
 ## 🔌 支持的模型 API（多 Provider 可切换）
@@ -117,7 +125,7 @@ python-learning-assistant/
 │   ├── test_search.py   # 搜索鉴权头与失败降级
 │   └── test_api.py      # TestClient 打真实路由
 ├── data/                # SQLite 数据库（运行时自动生成，已被 git 忽略）
-├── run.py               # 一键启动：python run.py
+├── run.py               # 一键启动：python run.py（--reload / --host / --port）
 ├── requirements.txt     # 应用依赖（版本锁定）
 ├── requirements-dev.txt # 测试依赖
 ├── pytest.ini
@@ -148,10 +156,13 @@ python-learning-assistant/
 
 - **结构化输出**：system prompt 约束 JSON schema，再用 pydantic 模型兜底校验，坏输出在入口就被拦住并转成可读错误，不会带到前端
 - **生命周期**：数据库初始化放在 FastAPI lifespan 里，`uvicorn --reload` 与测试导入都不会重复执行
+- **单连接 + 锁**：SQLite 连接在进程内复用，读写用 `threading.RLock` 串行化——单机单用户场景下省掉每请求的开销，也避免并发写触发 `database is locked`
+- **前端零构建**：单文件 HTML，CSS/JS 全内联；交互层自绘提示条与确认框替代原生 `alert/confirm`，不阻塞渲染、样式统一
 - **复合需求一次搞定**：同一句话里"规划路线 + 加 N 个 XX 语言项目"，模型在一个 JSON 里同时输出，后端校验入库
 - **防幻觉**：把搜索 API 返回的真实链接附进提示词，要求模型引用真实资源而非编造
 - **多 Provider 抽象**：9 家 OpenAI 兼容端点直连，Anthropic 按原生协议分流，换模型只需改配置，业务代码零改动
 - **降级策略**：搜索 Key 缺失、JSON 解析失败、`response_format` 不被支持、`generated_projects` 字段缺失时均有自动兜底，功能不中断；搜索源失败只写一行 stderr 日志并自动降级为纯 LLM
+- **调试口默认关闭**：`GET /api/search` 会直接消耗搜索 API 配额，默认不注册（返回 404），只在 `.env` 写 `DEBUG_ENDPOINTS=1` 时启用
 - **依赖锁定与 CI**：`requirements.txt` 锁死精确版本，任何机器 `pip install` 结果一致；GitHub Actions 在 Python 3.10/3.11/3.12 三个版本上跑 pytest，改动不会悄悄破坏兼容性
 
 ## ❓ 常见问题
@@ -166,6 +177,8 @@ python-learning-assistant/
   Ollama 则 `ollama run qwen3.8:27b`；然后 `.env` 设 `LLM_PROVIDER=local`、`LOCAL_MODEL=<GGUF 文件名>`。
 - **不想用搜索**：页面取消勾选「搜索增强」，或 `.env` 不填任何搜索 Key
 - **生成很慢**：多为模型侧响应慢（本地 27B 模型尤甚），换 DeepSeek / GPT 等云端模型会快很多
+- **改了代码想自动重启**：`python run.py --reload`；正式跑不要开，会多起一个看门狗进程
+- **提示 `database is locked`**：正常不会出现（读写已加锁串行化）；若是用其他工具直接打开了 `data/learning.db` 并持有写事务，关掉那个工具即可
 
 ## 📄 License
 

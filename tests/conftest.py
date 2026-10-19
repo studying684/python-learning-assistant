@@ -15,9 +15,17 @@ if str(ROOT) not in sys.path:
 
 @pytest.fixture()
 def temp_db(tmp_path, monkeypatch):
-    """把 projects 的 DATA_DIR / DB_PATH 重定向到 pytest 临时目录。"""
+    """把 projects 的 DATA_DIR / DB_PATH 重定向到 pytest 临时目录。
+
+    projects 模块现在按进程复用同一个连接，所以重定向后必须调用
+    reset_connection() 丢弃旧连接，否则后续读写仍然指向原库。
+    """
     from app import projects
 
     monkeypatch.setattr(projects, "DATA_DIR", tmp_path)
     monkeypatch.setattr(projects, "DB_PATH", tmp_path / "learning.db")
-    return tmp_path / "learning.db"
+    projects.reset_connection()
+    try:
+        yield tmp_path / "learning.db"
+    finally:
+        projects.reset_connection()

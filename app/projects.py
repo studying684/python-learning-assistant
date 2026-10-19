@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -81,49 +82,89 @@ SEED_PROJECTS = [
 ]
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+# ---- 单进程共享一个 SQLite 连接 ----
+# 本项目是单机单用户应用，按请求新开连接的做法有三个问题：
+#   1. 每次请求都做 mkdir + open + close，纯属浪费；
+#   2. FastAPI 的同步路由跑在线程池里，多请求并发写同一文件时
+#      SQLite 会抛 "database is locked"；
+#   3. 测试要把 DB 重定向到临时文件，每请求重连会让替换时机变得难料。
+# 因此连接在模块级惰性建立一次，所有读写共用，并用锁串行化。
+# sqlite3.connect 的 check_same_thread=False 允许跨线程使用，
+# 但真正保证安全的是我们自己这把锁（见 _locked）。
+_conn: sqlite3.Connection | None = None
+_lock = threading.RLock()
+
+
+def _connection() -> sqlite3.Connection:
+    """惰性建立（并复用）数据库连接；表结构在 init_db() 里建。"""
+    global _conn
+    if _conn is None:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        _conn = conn
+    return _conn
+
+
+class _locked:
+    """把临界区包起来的上下文管理器（可重入，读写的串行化都靠它）。"""
+
+    def __enter__(self) -> sqlite3.Connection:
+        _lock.acquire()
+        return _connection()
+
+    def __exit__(self, *exc_info) -> None:
+        try:
+            if exc_info[0] is None:
+                _connection().commit()
+        finally:
+            _lock.release()
+
+
+def reset_connection() -> None:
+    """丢弃当前连接（测试重定向 DATA_DIR/DB_PATH 后必须调用，否则指向旧库）。"""
+    global _conn
+    with _lock:
+        if _conn is not None:
+            _conn.close()
+            _conn = None
 
 
 def init_db() -> None:
     """建表 + 首次运行时写入种子项目。"""
-    conn = _connect()
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS projects (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            language TEXT NOT NULL,
-            difficulty TEXT NOT NULL,
-            title TEXT NOT NULL,
-            description TEXT NOT NULL,
-            knowledge_points TEXT NOT NULL,
-            acceptance_criteria TEXT NOT NULL,
-            source TEXT NOT NULL DEFAULT 'builtin',
-            done INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-        )
-        """
-    )
-    count = conn.execute("SELECT COUNT(*) AS c FROM projects").fetchone()["c"]
-    if count == 0:
-        for item in SEED_PROJECTS:
-            conn.execute(
-                "INSERT INTO projects(language, difficulty, title, description, knowledge_points, acceptance_criteria, source)"
-                " VALUES (?, ?, ?, ?, ?, ?, 'builtin')",
-                (
-                    item["language"],
-                    item["difficulty"],
-                    item["title"],
-                    item["description"],
-                    json.dumps(item["knowledge_points"], ensure_ascii=False),
-                    json.dumps(item["acceptance_criteria"], ensure_ascii=False),
-                ),
+    with _locked() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                language TEXT NOT NULL,
+                difficulty TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                knowledge_points TEXT NOT NULL,
+                acceptance_criteria TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'builtin',
+                done INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             )
-    conn.commit()
-    conn.close()
+            """
+        )
+        count = conn.execute("SELECT COUNT(*) AS c FROM projects").fetchone()["c"]
+        if count == 0:
+            for item in SEED_PROJECTS:
+                conn.execute(
+                    "INSERT INTO projects(language, difficulty, title, description, knowledge_points, acceptance_criteria, source)"
+                    " VALUES (?, ?, ?, ?, ?, ?, 'builtin')",
+                    (
+                        item["language"],
+                        item["difficulty"],
+                        item["title"],
+                        item["description"],
+                        json.dumps(item["knowledge_points"], ensure_ascii=False),
+                        json.dumps(item["acceptance_criteria"], ensure_ascii=False),
+                    ),
+                )
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
@@ -143,7 +184,6 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 
 def list_projects(language: str | None = None, difficulty: str | None = None) -> list[dict]:
     """查询项目库，支持按语言、难度过滤。"""
-    conn = _connect()
     sql = "SELECT * FROM projects WHERE 1=1"
     args: list = []
     if language:
@@ -153,52 +193,45 @@ def list_projects(language: str | None = None, difficulty: str | None = None) ->
         sql += " AND difficulty = ?"
         args.append(difficulty)
     sql += " ORDER BY id"
-    rows = conn.execute(sql, args).fetchall()
-    conn.close()
+    with _locked() as conn:
+        rows = conn.execute(sql, args).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
 def list_languages() -> list[str]:
     """返回项目库中已有的语言列表（用于前端筛选）。"""
-    conn = _connect()
-    rows = conn.execute("SELECT DISTINCT language FROM projects ORDER BY language").fetchall()
-    conn.close()
+    with _locked() as conn:
+        rows = conn.execute("SELECT DISTINCT language FROM projects ORDER BY language").fetchall()
     return [r["language"] for r in rows]
 
 
 def mark_done(project_id: int, done: bool) -> None:
-    conn = _connect()
-    conn.execute("UPDATE projects SET done = ? WHERE id = ?", (1 if done else 0, project_id))
-    conn.commit()
-    conn.close()
+    with _locked() as conn:
+        conn.execute("UPDATE projects SET done = ? WHERE id = ?", (1 if done else 0, project_id))
 
 
 def delete_project(project_id: int) -> None:
-    conn = _connect()
-    conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-    conn.commit()
-    conn.close()
+    with _locked() as conn:
+        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
 
 
 def add_project(data: dict, source: str = "generated") -> dict:
     """写入一个项目，返回含自增 id 的完整记录。"""
-    conn = _connect()
-    cur = conn.execute(
-        "INSERT INTO projects(language, difficulty, title, description, knowledge_points, acceptance_criteria, source)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (
-            data["language"],
-            data["difficulty"],
-            data["title"],
-            data["description"],
-            json.dumps(data["knowledge_points"], ensure_ascii=False),
-            json.dumps(data["acceptance_criteria"], ensure_ascii=False),
-            source,
-        ),
-    )
-    conn.commit()
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (cur.lastrowid,)).fetchone()
-    conn.close()
+    with _locked() as conn:
+        cur = conn.execute(
+            "INSERT INTO projects(language, difficulty, title, description, knowledge_points, acceptance_criteria, source)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                data["language"],
+                data["difficulty"],
+                data["title"],
+                data["description"],
+                json.dumps(data["knowledge_points"], ensure_ascii=False),
+                json.dumps(data["acceptance_criteria"], ensure_ascii=False),
+                source,
+            ),
+        )
+        row = conn.execute("SELECT * FROM projects WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _row_to_dict(row)
 
 

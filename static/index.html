@@ -130,6 +130,35 @@
   .link-del:hover { color: var(--warn); }
   .empty { font-size: 13px; color: var(--text-soft); padding: 20px 0; }
 
+  /* 轻量提示条（替代 alert） */
+  .notice {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
+    max-width: 90vw; padding: 10px 18px; border-radius: 8px; z-index: 60;
+    background: #1f2937; color: #fff; font-size: 13px; line-height: 1.5;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+  }
+  .notice.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .notice-error { background: var(--warn); }
+
+  /* 自绘确认框（替代 confirm） */
+  .overlay {
+    position: fixed; inset: 0; z-index: 70; display: none;
+    align-items: center; justify-content: center; padding: 20px;
+    background: rgba(17,24,39,.45);
+  }
+  .overlay.show { display: flex; }
+  .dialog {
+    width: min(420px, 100%); background: var(--card); border-radius: var(--radius);
+    padding: 22px; box-shadow: 0 20px 50px rgba(0,0,0,.25);
+  }
+  .dialog h3 { font-size: 16px; margin-bottom: 8px; }
+  .dialog p { font-size: 13px; color: var(--text-soft); margin-bottom: 18px; word-break: break-all; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+  .dialog-actions .btn { margin-top: 0; padding: 8px 18px; }
+  .btn.danger { background: var(--warn); }
+  .btn.danger:hover { opacity: .9; }
+
   /* AI 生成新项目表单 */
   .gen-form { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
   .gen-form input {
@@ -190,8 +219,22 @@
       <input id="genTopic" placeholder="主题/方向（可空）">
       <button class="btn" id="genBtn">生成并入库</button>
     </div>
+    <div id="genResult"></div>
   </section>
 </main>
+
+<div class="notice" id="notice" role="status" aria-live="polite"></div>
+
+<div class="overlay" id="confirmOverlay" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <div class="dialog">
+    <h3 id="confirmTitle">确认</h3>
+    <p id="confirmMessage"></p>
+    <div class="dialog-actions">
+      <button class="btn ghost" id="confirmCancel">取消</button>
+      <button class="btn danger" id="confirmOk">确认删除</button>
+    </div>
+  </div>
+</div>
 
 <footer>Python 学习路线助手 · 多模型 API 可切换 · 练手项目库支持 AI 扩展</footer>
 
@@ -211,6 +254,20 @@ async function api(url, options) {
     throw new Error(detail);
   }
   return resp.json();
+}
+
+/* 读请求自动重试一次：fetch 断网/服务未就绪时抛的是 TypeError，
+   对只读接口重试是安全的，能挡掉「页面开着、服务刚重启」这类抖动。 */
+async function apiGet(url) {
+  try {
+    return await api(url);
+  } catch (err) {
+    if (err instanceof TypeError) {
+      await new Promise((r) => setTimeout(r, 800));
+      return api(url);
+    }
+    throw err;
+  }
 }
 
 function escapeHtml(s) {
@@ -242,14 +299,16 @@ async function loadModels() {
       $("searchToggle").parentElement.title = "未配置搜索 API Key（Tavily/SerpAPI），已自动关闭";
     }
   } catch (err) {
-    console.error("加载模型列表失败:", err.message);
+    // /api/models 失败不致命（还能用页面），只提示不阻断
+    showNotice("加载模型列表失败：" + err.message, "error");
+    console.error("loadModels:", err);
   }
 }
 
 /* ---------- 学习路线 ---------- */
 async function generateRoute() {
   const input = $("userInput").value.trim();
-  if (!input) { alert("请先描述你的学习需求"); return; }
+  if (!input) { showNotice("请先描述你的学习需求", "error"); return; }
   const btn = $("routeBtn");
   btn.disabled = true;
   btn.textContent = "生成中…";
@@ -317,7 +376,7 @@ async function loadProjects() {
   if (currentLang) params.set("language", currentLang);
   if (currentDiff) params.set("difficulty", currentDiff);
   try {
-    const data = await api("/api/projects?" + params.toString());
+    const data = await apiGet("/api/projects?" + params.toString());
     // 更新语言筛选下拉（保留当前选择）
     const langSel = $("langFilter");
     const prev = langSel.value;
@@ -332,7 +391,8 @@ async function loadProjects() {
     currentLang = langSel.value;
     renderProjects(data.projects);
   } catch (err) {
-    $("projectList").innerHTML = '<div class="error">' + escapeHtml(err.message) + "</div>";
+    $("projectList").innerHTML =
+      '<div class="error">' + escapeHtml(err.message) + "</div>";
   }
 }
 
@@ -369,26 +429,78 @@ function renderProjects(projects) {
 }
 
 async function toggleDone(id, done) {
+  const box = document.querySelector('.project[data-id="' + id + '"]');
+  // 先记住原状态，失败时回滚，避免界面和数据库不一致
+  const checkbox = box ? box.querySelector('[data-act="done"]') : null;
+  if (checkbox) checkbox.disabled = true;
   try {
     await api("/api/projects/" + id + "/done", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ done: done }),
     });
-    loadProjects();
+    // 只改这一张卡片的样式，不整页刷新（保留滚动位置与筛选）
+    if (box) box.classList.toggle("done", done);
   } catch (err) {
-    alert("操作失败：" + err.message);
+    showNotice(err.message);
+    if (checkbox) checkbox.checked = !done;
+  } finally {
+    if (checkbox) checkbox.disabled = false;
   }
 }
 
 async function deleteProject(id) {
-  if (!confirm("确定删除这个项目吗？")) return;
+  const card = document.querySelector('.project[data-id="' + id + '"]');
+  const title = card ? card.querySelector(".project-title").textContent.trim() : "";
+  // 自绘确认框代替原生 confirm：统一样式、可显示项目名，且不阻塞渲染
+  const ok = await showConfirm("删除项目", "确定删除「" + title + "」吗？删除后无法恢复。");
+  if (!ok) return;
   try {
     await api("/api/projects/" + id, { method: "DELETE" });
-    loadProjects();
+    await loadProjects();
   } catch (err) {
-    alert("删除失败：" + err.message);
+    showNotice("删除失败：" + err.message);
   }
+}
+
+/* ---------- 轻量提示 / 确认框（替代 alert / confirm） ---------- */
+let noticeTimer = null;
+
+function showNotice(message, type) {
+  const box = $("notice");
+  box.textContent = message;
+  box.className = "notice show" + (type === "error" ? " notice-error" : "");
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => { box.className = "notice"; }, 5000);
+}
+
+function showConfirm(title, message) {
+  return new Promise((resolve) => {
+    const overlay = $("confirmOverlay");
+    $("confirmTitle").textContent = title;
+    $("confirmMessage").textContent = message;
+    overlay.classList.add("show");
+    const done = (val) => {
+      overlay.classList.remove("show");
+      $("confirmOk").removeEventListener("click", onOk);
+      $("confirmCancel").removeEventListener("click", onCancel);
+      overlay.removeEventListener("click", onOverlay);
+      document.removeEventListener("keydown", onKey);
+      resolve(val);
+    };
+    const onOk = () => done(true);
+    const onCancel = () => done(false);
+    const onOverlay = (e) => { if (e.target === overlay) done(false); };
+    const onKey = (e) => {
+      if (e.key === "Escape") done(false);
+      if (e.key === "Enter") done(true);
+    };
+    $("confirmOk").addEventListener("click", onOk);
+    $("confirmCancel").addEventListener("click", onCancel);
+    overlay.addEventListener("click", onOverlay);
+    document.addEventListener("keydown", onKey);
+    $("confirmOk").focus();
+  });
 }
 
 /* ---------- AI 生成新项目 ---------- */
@@ -399,6 +511,8 @@ async function generateProjects() {
   const btn = $("genBtn");
   btn.disabled = true;
   btn.textContent = "生成中…";
+  const box = $("genResult");
+  box.innerHTML = '<div class="loading">正在生成 ' + count + " 个「" + escapeHtml(language) + "」练手项目，请稍候（约需 10~30 秒）…</div>";
   try {
     const created = await api("/api/projects/generate", {
       method: "POST",
@@ -411,16 +525,17 @@ async function generateProjects() {
       }),
     });
     $("genTopic").value = "";
-    await loadProjects();
     if (language !== "Python" && !$("langFilter").value) {
       // 生成了新语言的项目时，切到该语言便于立即看到
       $("langFilter").value = language;
       currentLang = language;
-      await loadProjects();
     }
-    alert("已生成 " + created.length + " 个项目并加入项目库");
+    await loadProjects();
+    box.innerHTML =
+      '<div class="added-note">已生成 ' + created.length + " 个项目并加入项目库：" +
+      escapeHtml(created.map((p) => p.title).join("、")) + "</div>";
   } catch (err) {
-    alert("生成失败：" + err.message);
+    box.innerHTML = '<div class="error">' + escapeHtml(err.message) + "</div>";
   } finally {
     btn.disabled = false;
     btn.textContent = "生成并入库";
