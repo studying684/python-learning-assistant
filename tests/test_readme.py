@@ -1,31 +1,31 @@
-"""README 双语自检：落地页是访客看到的第一屏，不能只靠肉眼。
+"""README 双语自检：README.md 是英文主入口，README.zh-CN.md 是中文版。
 
-这个仓库的 README 是**单文件双语**（中文在上、英文在下，顶部锚点互跳），
-代价是两半容易各改各的、慢慢漂移。这里钉住"两半必须同步"的硬约束。
+为什么是两份文件而不是单文件双语：点进仓库的第一屏就该是英文（GitHub 上
+英文读者占多数），中文读者走顶部语言栏一次点击即可拿到完整中文——这符合
+GitHub 上主流通行的做法，也比在同一页里上下翻找更省事。
+
+代价是两份文档容易各改各的，慢慢就漂了。这里把它们钉在一起。
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TEXT = (ROOT / "README.md").read_text(encoding="utf-8")
-LINES = TEXT.splitlines()
+EN = (ROOT / "README.md").read_text(encoding="utf-8")
+ZH = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+
+BOTH = (("README.md", EN), ("README.zh-CN.md", ZH))
+
+# 只在这边出现的章节标题，用来抓"两边混进了对方的内容"
+ZH_ONLY = ("快速开始", "常见问题", "工作原理", "功能特性", "项目结构", "界面预览")
+EN_ONLY = ("Quick start", "How it works", "Project layout", "UI preview")
 
 
-def _split_halves() -> tuple[str, str]:
-    """返回 (中文半, 英文半)。英文在半页前：GitHub 以英文读者为主。"""
-    en = next(i for i, ln in enumerate(LINES) if ln.strip() == "## English")
-    zh = next(i for i, ln in enumerate(LINES) if ln.strip() == "## 简体中文")
-    assert en < zh, "英文半应在中文半之前"
-    return "\n".join(LINES[zh:]), "\n".join(LINES[en:zh])
-
-
-def _headings(level: int) -> list[str]:
+def _headings(text: str, level: int) -> list[str]:
     """只取代码围栏之外的标题（bash 里的 `# 注释` 不是标题）。"""
     marker = "#" * level + " "
     out, in_fence = [], False
-    for ln in LINES:
+    for ln in text.splitlines():
         if ln.lstrip().startswith("```"):
             in_fence = not in_fence
             continue
@@ -34,74 +34,93 @@ def _headings(level: int) -> list[str]:
     return out
 
 
-def test_single_bilingual_readme():
-    """单文件双语：不再保留第二份中文 README，避免两处都要改。"""
-    assert not (ROOT / "README.zh-CN.md").exists(), "中文已并入 README.md，不应再有独立文件"
+def test_both_readmes_exist():
+    assert (ROOT / "README.md").is_file()
+    assert (ROOT / "README.zh-CN.md").is_file()
 
 
-def test_exactly_one_h1():
-    assert len(_headings(1)) == 1
+def test_entrypoint_is_english():
+    """点进仓库看到的是 README.md，所以它必须是英文的。"""
+    assert _headings(EN, 2), "README.md 没有二级标题"
+    assert "Quick start" in EN
+    leaked = [p for p in ZH_ONLY if p in EN]
+    assert not leaked, f"英文入口混入了中文标题：{leaked}"
 
 
-def test_language_sections_exist():
-    h2 = _headings(2)
-    assert "简体中文" in h2
-    assert "English" in h2
+def test_chinese_readme_is_chinese():
+    assert _headings(ZH, 2), "README.zh-CN.md 没有二级标题"
+    assert "快速开始" in ZH
+    leaked = [p for p in EN_ONLY if p in ZH]
+    assert not leaked, f"中文版混入了英文标题：{leaked}"
 
 
-def test_language_nav_anchors_resolve():
-    """顶部语言栏的锚点必须指向真实存在的标题，否则点了没反应。"""
-    assert "**English**" in TEXT          # 当前语言不加链接
-    assert "[简体中文](#简体中文)" in TEXT  # 另一语言可点
+def test_language_switcher_links_both_ways():
+    """语言栏必须是真实链接，且指向的文件确实存在。"""
+    assert "[简体中文](README.zh-CN.md)" in EN
+    assert "[English](README.md)" in ZH
+    assert (ROOT / "README.zh-CN.md").is_file()
+    assert (ROOT / "README.md").is_file()
 
 
-def test_english_half_comes_first():
-    """英文在前：GitHub 上大部分访客读英文，第一屏就该是英文。"""
-    en = next(i for i, ln in enumerate(LINES) if ln.strip() == "## English")
-    zh = next(i for i, ln in enumerate(LINES) if ln.strip() == "## 简体中文")
-    assert en < zh
+def test_exactly_one_h1_each():
+    for name, text in BOTH:
+        assert len(_headings(text, 1)) == 1, f"{name} 的 H1 数量是 {len(_headings(text, 1))}"
 
 
-def test_code_fences_are_balanced():
-    """围栏不成对会让整页渲染塌掉——这是 README 最致命的格式错误。"""
-    assert len([ln for ln in LINES if ln.lstrip().startswith("```")]) % 2 == 0
+def test_code_fences_balanced():
+    """围栏不成对会让整页渲染塌掉——README 最致命的格式错误。"""
+    for name, text in BOTH:
+        n = len([ln for ln in text.splitlines() if ln.lstrip().startswith("```")])
+        assert n % 2 == 0, f"{name} 代码围栏不成对（{n} 个，应为偶数）"
 
 
-def test_both_halves_have_same_section_count():
-    zh, en = _split_halves()
-    zh_n = len([ln for ln in zh.splitlines() if ln.startswith("### ")])
-    en_n = len([ln for ln in en.splitlines() if ln.startswith("### ")])
-    assert zh_n == en_n, f"中英章节数不一致：中文 {zh_n} vs 英文 {en_n}"
+def test_same_section_structure():
+    """两份文档的章节数必须一致，否则翻译就是慢慢漏项的。"""
+    en_n = len(_headings(EN, 2))
+    zh_n = len(_headings(ZH, 2))
+    assert en_n == zh_n, f"章节数不一致：英文 {en_n} vs 中文 {zh_n}"
 
 
-def test_provider_table_is_complete_in_both_halves():
-    """README 的 Provider 表必须和 app/config.py 的注册表逐一对齐。
+def test_provider_table_matches_registry():
+    """文档里的 Provider 表必须和 app/config.py 的注册表逐一对齐。
 
     这样"加了 Provider 却忘了写文档"会直接测试失败，而不是等用户发现。
     """
     from app import config
 
-    zh, en = _split_halves()
-    # config.PROVIDERS 里的 env_prefix 不带尾部下划线（拼环境变量名时才补），
-    # 而 README 表格里展示的是 `PREFIX_` 这种完整形态。
+    # config.PROVIDERS 的 env_prefix 不带尾部下划线（拼环境变量名时才补），
+    # 文档表格里展示的是 `PREFIX_` 这种完整形态。
     missing = [
         (name, side)
         for name, meta in config.PROVIDERS.items()
-        for side, half in (("中文", zh), ("English", en))
-        if f"`{meta['env_prefix']}_`" not in half
+        for side, text in BOTH
+        if f"`{meta['env_prefix']}_`" not in text
     ]
-    assert not missing, f"以下 Provider 未在 README 中记录：{missing}"
+    assert not missing, f"以下 Provider 未在文档中记录：{missing}"
 
 
-def test_key_facts_present_in_both_halves():
-    """这些是本项目的招牌事实，翻译时最容易漏。"""
-    zh, en = _split_halves()
+def test_key_facts_present_in_both():
+    """招牌事实翻译时最容易漏，逐个点名。"""
     facts = ["deepseek-flash", "grok-4.7", "qwen3.8-27b", "claude-sonnet-5-5",
              "--jinja", "DEBUG_ENDPOINTS", "[MIT](LICENSE)", ".github/workflows/ci.yml"]
-    missing = [(f, side) for f in facts for side, half in
-               (("中文", zh), ("English", en)) if f not in half]
-    assert not missing, f"以下事实缺翻译：{missing}"
+    missing = [
+        (fact, side)
+        for fact in facts
+        for side, text in BOTH
+        if fact not in text
+    ]
+    assert not missing, f"以下事实缺一种语言的翻译：{missing}"
 
 
-def test_no_stale_mentions_of_removed_file():
-    assert "README.zh-CN" not in TEXT
+def test_project_tree_lists_both_readmes():
+    """结构树里两份文件都要列出，且各自把「本文件」标在自己身上。"""
+    for name, text in BOTH:
+        assert "README.md" in text and "README.zh-CN.md" in text, name
+    assert "README.md            # English docs (this file)" in EN
+    assert "README.zh-CN.md      # 简体中文文档（本文件）" in ZH
+
+
+def test_authoritative_version_is_stated():
+    """两份文档都要写明"以中文为准"，避免翻译漂移时扯皮。"""
+    assert "is authoritative" in EN
+    assert "以本文件为准" in ZH
