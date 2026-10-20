@@ -14,10 +14,11 @@ LINES = TEXT.splitlines()
 
 
 def _split_halves() -> tuple[str, str]:
-    zh = next(i for i, ln in enumerate(LINES) if ln.strip() == "## 简体中文")
+    """返回 (中文半, 英文半)。英文在半页前：GitHub 以英文读者为主。"""
     en = next(i for i, ln in enumerate(LINES) if ln.strip() == "## English")
-    assert zh < en, "中文小节应在英文小节之前"
-    return "\n".join(LINES[zh:en]), "\n".join(LINES[en:])
+    zh = next(i for i, ln in enumerate(LINES) if ln.strip() == "## 简体中文")
+    assert en < zh, "英文半应在中文半之前"
+    return "\n".join(LINES[zh:]), "\n".join(LINES[en:zh])
 
 
 def _headings(level: int) -> list[str]:
@@ -50,9 +51,15 @@ def test_language_sections_exist():
 
 def test_language_nav_anchors_resolve():
     """顶部语言栏的锚点必须指向真实存在的标题，否则点了没反应。"""
-    assert "**简体中文**" in TEXT
-    assert "[English](#english)" in TEXT
-    assert "[简体中文](#简体中文)" in TEXT
+    assert "**English**" in TEXT          # 当前语言不加链接
+    assert "[简体中文](#简体中文)" in TEXT  # 另一语言可点
+
+
+def test_english_half_comes_first():
+    """英文在前：GitHub 上大部分访客读英文，第一屏就该是英文。"""
+    en = next(i for i, ln in enumerate(LINES) if ln.strip() == "## English")
+    zh = next(i for i, ln in enumerate(LINES) if ln.strip() == "## 简体中文")
+    assert en < zh
 
 
 def test_code_fences_are_balanced():
